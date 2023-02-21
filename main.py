@@ -26,9 +26,18 @@ import ql_fs
 PROJECT_NAME = "PSI_Tracker4G"
 PROJECT_VERSION = "0.14011127"
 log_path="/usr/log.txt"
+log_index_path="/usr/log_index.txt"
 logged_data = {}
+logged_index_json={}
 if ql_fs.path_exists(log_path):
     logged_data=ql_fs.read_json(log_path)
+if ql_fs.path_exists(log_path):
+    logged_index_json=ql_fs.read_json(log_index_path)
+    logged_index = logged_index_json[0]
+    sent_index = logged_index_json[1]
+else:
+    logged_index=-1
+    sent_index=-1
     
 checknet = checkNet.CheckNetwork(PROJECT_NAME, PROJECT_VERSION)
 
@@ -91,8 +100,7 @@ BatteryGauge.SetAlertThreshold(10)
 BatteryGauge.SetModeRegister(BatteryGauge.MODE_QSTRT)
 GPIO_GNSS_PW_Enable.write(1)
 GPIO_GNSS_PW_Enable.write(0)
-logged_index=-1
-sent_index=-1
+
 # print("vbat: %smV, soc: %s%%, Remaining Runtime: %s minutes" % (vbat, bat_soc, bat_rem_runtime))
 
 
@@ -197,25 +205,7 @@ def selfTest():
         print('AHT Failed')
     else:
         print('AHT OK')
-    utime.sleep(1)
-    Vibre.off()
-    TouchLED.off()
-    B3_LED.off()
-    B2_LED.off()  
-    B1_LED.off()
-    B0_LED.off()
-    Band_LED.off()
-    Charger_LED.off()
-    utime.sleep(1)
-    Vibre.on()
-    TouchLED.on()
-    B3_LED.on()
-    B2_LED.on()  
-    B1_LED.on()
-    B0_LED.on()
-    Band_LED.on()
-    Charger_LED.on()
-    utime.sleep(1)
+    utime.sleep(2)
     Vibre.off()
     TouchLED.off()
     B3_LED.off()
@@ -273,14 +263,14 @@ def TamperFunc(args):
         if (doorTamperSent==1):
             doorTamper=doorValue
             doorTamperSent=0
-    if ((Band1<600) and (Band0>1000) and (doorValue<21)):
+    if ((Band1<600) and (Band0>1000)):# and (doorValue<5)):
         Band_LED.off()
     if ((Band1>600)):
         Band_LED.on()
         BandTamper=Band1
         BandTamperSent=0
-    if (doorValue>20):
-        Band_LED.on()
+    if (doorValue>4):
+        # Band_LED.on()
         doorTamper=doorValue
         doorTamperSent=0
     if (Band0 < 600) :
@@ -342,12 +332,15 @@ def func(args):
     bat_soc=BatteryGauge.GetStateOfCharge()
     if (bat_soc<5):
         ql_fs.touch(log_path, logged_data)
+        logged_index_json[0]=logged_index
+        logged_index_json[1]=sent_index
+        ql_fs.touch(log_index_path, logged_index_json)
     if (vbat < 25):
         Vibre.start_flicker(300,300,3)
         
     # if(Charger == 1):   
     data = uart.read(uart.any())
-    #data[1].decode()
+    data=data.decode()
     #r=ure.search("GNGGA(.+?)V", data[1].decode())
     #print(buf,"\r\n")
     gngga1 = data.split("$GNGGA,")[1].split("\r\n")[0].split(",")
@@ -412,6 +405,7 @@ def func(args):
         conseq_send_failed = 0 
         response_txt = next(response.content)
         response_txt_csv = response_txt.split(",")
+        response.close()
         print(response_txt)
         if(response_txt_csv[0] == '-1') :
             conseq_send_failed +=1
@@ -442,7 +436,7 @@ def func(args):
             if (int(response_txt_csv[4]) == 1):
                 # print("FOTA : N/I yet!")
                 fota_url="https://raw.githubusercontent.com/dezdeepblue/TestingTR42/main/main.py"
-                file_name="main.py"
+                file_name="/usr/main.py"
                 fota = app_fota.new()
                 fota.download(fota_url, file_name)
                 fota.set_update_flag()
@@ -463,15 +457,20 @@ def func(args):
         net.setApn('mcinet',0)
         conseq_send_failed=0
     SOS=0;Charger=0;BandTamperSent=1;doorTamperSent=1;Temperature=0;Accel=0
+    response.close()                
     if (logged_index > sent_index) :
         for i in range(sent_index+1, logged_index+1):
-            TrackerData=TrackerSendingLoggedMsgFormat.format(logged_data_tobeSent=logged_data[i])
+            TrackerData=TrackerSendingLoggedMsgFormat.format(logged_data_tobeSent=logged_data[i],imei=imei1)
+            print(TrackerData)
             url_request = url + TrackerData
             response = request.get(url_request)
             response_txt = next(response.content)
             response_txt_csv = response_txt.split(",")
+            print(response_txt)
             if(response_txt_csv[0] == '-1') :
                 break;
+            response.close()
+            conseq_send_failed = 0 
         else:
             logged_data={}
             logged_index = 0
